@@ -1,8 +1,16 @@
-import ssl
 import os
 from subprocess import run
-
+import websockets as ws
+import asyncio
 import http.server
+
+
+# Logic for WS server here
+
+
+
+
+
 
 PORT = 4443
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -16,24 +24,45 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.path = '/index.htm'
         return super().do_GET()
 
-if __name__ == "__main__":
-    httpd = http.server.HTTPServer(('0.0.0.0', PORT), Handler)
+def http_server():
+    httpd = http.server.ThreadingHTTPServer(('localhost', PORT), Handler)
 
-    # Generate a self-signed certificate if not present
-    cert_file = os.path.join(DIRECTORY, 'cert.pem')
-    key_file = os.path.join(DIRECTORY, 'key.pem')
-    if not (os.path.exists(cert_file) and os.path.exists(key_file)):
-        print("Generating self-signed certificate...")
-        run([
-            'C:\\Program Files\\OpenSSL-Win64\\bin\\openssl', 'req', '-new', '-x509', '-days', '365',
-            '-nodes', '-out', cert_file, '-keyout', key_file,
-            '-subj', '/CN=localhost'
-        ], check=True)
-
-    # Use SSLContext instead of deprecated ssl.wrap_socket
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(certfile=cert_file, keyfile=key_file)
-    httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
-
-    print(f"Serving HTTPS on https://localhost:{PORT}/")
+    print(f"Serving HTTP on http://localhost:{PORT}/")
+    try:
+        import socket
+        with socket.create_connection(("localhost", PORT), timeout=2):
+            print(f"Local connectivity check: OK (http://localhost:{PORT}/)")
+    except Exception as e:
+        print(f"Warning: Could not connect to http://localhost:{PORT}/ from localhost. Error: {e}")
     httpd.serve_forever()
+
+def websocket_server():
+    async def handler(websocket):
+        print(f"WebSocket connection established from {websocket.remote_address}")
+        try:
+            while True:
+                message = await websocket.recv()
+                await websocket.send(f"Echo: {message}")
+        except ws.ConnectionClosed:
+            print("WebSocket connection closed")
+
+    async def start():
+        server = await ws.serve(handler, "localhost", 8765)
+        print("WebSocket server started on ws://localhost:8765/")
+        try:
+            await server.wait_closed()
+        except KeyboardInterrupt:
+            print("WebSocket server stopped")
+
+    asyncio.run(start())
+
+if __name__ == "__main__":
+    print("Starting HTTP and WebSocket servers...")
+
+    # Start HTTP server in a separate thread
+    import threading
+    http_thread = threading.Thread(target=http_server, daemon=True)
+    http_thread.start()
+
+    # Start WebSocket server
+    websocket_server()
